@@ -46,19 +46,24 @@
 
   .text {
     flex: 1;
+    width: 100%;
     font-size: 22px;
     line-height: 1.45;
+    background: transparent;
+    border: none;
+    color: #fff;
+    resize: none;
+    font-family: inherit;
     overflow-y: auto;
-    word-break: break-word;
-    display: flex;
-    align-items: center;
+    -webkit-appearance: none;
+    border-radius: 0;
   }
-  .text .placeholder { opacity: 0.3; font-size: 16px; }
+  .text:focus { outline: none; }
+  .text::placeholder { opacity: 0.3; font-size: 16px; }
   .text.interim { opacity: 0.55; }
 
   .btn {
-    margin-top: 10px;
-    align-self: flex-start;
+    margin-top: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -80,6 +85,10 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
 
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .btn.act { background: rgba(255,255,255,0.12) !important; padding: 11px 16px; }
+  .copy-btn.ok { background: #2aa35a !important; }
+
   #status {
     text-align: center;
     font-size: 12px;
@@ -94,20 +103,32 @@
 
   <div class="panel zh" data-i="0">
     <div class="head"><span class="label"><span class="flag">🇹🇼</span>繁體中文</span></div>
-    <div class="text"><span class="placeholder">點下方按鈕說中文…</span></div>
-    <button class="btn"><span class="dot"></span>說中文</button>
+    <textarea class="text" placeholder="說中文，或直接打字…"></textarea>
+    <div class="actions">
+      <button class="btn rec-btn"><span class="dot"></span>說中文</button>
+      <button class="btn act translate-btn">翻譯</button>
+      <button class="btn act copy-btn">複製</button>
+    </div>
   </div>
 
   <div class="panel en" data-i="1">
     <div class="head"><span class="label"><span class="flag">🇬🇧</span>English</span></div>
-    <div class="text"><span class="placeholder">Tap below to speak English…</span></div>
-    <button class="btn"><span class="dot"></span>Speak English</button>
+    <textarea class="text" placeholder="Speak or type English…"></textarea>
+    <div class="actions">
+      <button class="btn rec-btn"><span class="dot"></span>Speak English</button>
+      <button class="btn act translate-btn">翻譯</button>
+      <button class="btn act copy-btn">複製</button>
+    </div>
   </div>
 
   <div class="panel id" data-i="2">
     <div class="head"><span class="label"><span class="flag">🇮🇩</span>Bahasa Indonesia</span></div>
-    <div class="text"><span class="placeholder">Ketuk untuk bicara…</span></div>
-    <button class="btn"><span class="dot"></span>Bahasa Indonesia</button>
+    <textarea class="text" placeholder="Bicara atau ketik…"></textarea>
+    <div class="actions">
+      <button class="btn rec-btn"><span class="dot"></span>Bahasa Indonesia</button>
+      <button class="btn act translate-btn">翻譯</button>
+      <button class="btn act copy-btn">複製</button>
+    </div>
   </div>
 
   <div id="status">準備就緒 · 點任一按鈕開始</div>
@@ -121,7 +142,9 @@ const LANGS = [
 
 const panels = [...document.querySelectorAll('.panel')];
 const texts  = panels.map(p => p.querySelector('.text'));
-const btns   = panels.map(p => p.querySelector('.btn'));
+const btns   = panels.map(p => p.querySelector('.rec-btn'));
+const transBtns = panels.map(p => p.querySelector('.translate-btn'));
+const copyBtns  = panels.map(p => p.querySelector('.copy-btn'));
 const statusEl = document.getElementById('status');
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -140,11 +163,7 @@ function setStatus(msg, isErr) {
 
 function setText(i, str, interim) {
   texts[i].classList.toggle('interim', !!interim);
-  texts[i].innerHTML = str ? escapeHtml(str) : '<span class="placeholder">…</span>';
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  texts[i].value = str || '';
 }
 
 btns.forEach((btn, i) => {
@@ -154,6 +173,39 @@ btns.forEach((btn, i) => {
     start(i);
   });
 });
+
+// 翻譯鈕：把這欄文字翻到另外兩欄（手動觸發，不監聽 input → 天然防迴圈）
+transBtns.forEach((btn, i) => {
+  btn.addEventListener('click', () => {
+    const text = texts[i].value.trim();
+    if (!text) { setStatus('這欄是空的，先打字或說話', true); return; }
+    translateAll(text, i);
+  });
+});
+
+// 複製鈕：複製這欄文字到剪貼簿
+copyBtns.forEach((btn, i) => {
+  btn.addEventListener('click', async () => {
+    const text = texts[i].value.trim();
+    if (!text) { setStatus('沒東西可複製', true); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      legacyCopy(texts[i]);
+    }
+    btn.classList.add('ok');
+    btn.textContent = '已複製';
+    setTimeout(() => { btn.classList.remove('ok'); btn.textContent = '複製'; }, 1200);
+  });
+});
+
+function legacyCopy(ta) {
+  ta.focus();
+  ta.setSelectionRange(0, ta.value.length);
+  try { document.execCommand('copy'); } catch (e) {}
+  ta.setSelectionRange(0, 0);
+  ta.blur();
+}
 
 function start(i) {
   recog = new SR();
