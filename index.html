@@ -161,6 +161,7 @@ function start(i) {
   recog.continuous = false;       // iOS Safari 只吃單句模式
   recog.interimResults = true;
   let finalText = '';
+  let lastInterim = '';
 
   recog.onstart = () => {
     activeIndex = i;
@@ -176,6 +177,7 @@ function start(i) {
       const t = e.results[k][0].transcript;
       if (e.results[k].isFinal) finalText += t; else interim += t;
     }
+    lastInterim = interim;
     setText(i, finalText + interim, !!interim && !finalText);
   };
 
@@ -187,10 +189,12 @@ function start(i) {
     btns[i].classList.remove('rec');
     btns[i].lastChild.textContent = btnLabel(i);
     activeIndex = -1;
-    const said = finalText.trim();
+    const said = (finalText || lastInterim).trim();
     if (said) {
       setText(i, said, false);
       translateAll(said, i);
+    } else {
+      setStatus('沒聽到內容,點按鈕再說一次', true);
     }
   };
 
@@ -211,7 +215,7 @@ async function translateAll(text, srcIndex) {
     }));
     setStatus('完成 · 點任一按鈕繼續');
   } catch (err) {
-    setStatus('翻譯失敗（可能網路問題或免費額度用盡），稍後再試', true);
+    setStatus('翻譯失敗:' + (err && err.message ? err.message : '網路或額度問題'), true);
   }
 }
 
