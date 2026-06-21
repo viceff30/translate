@@ -219,7 +219,7 @@ function start(i) {
     activeIndex = i;
     btns[i].classList.add('rec');
     btns[i].lastChild.textContent = '錄音中 · 點擊停止';
-    setText(i, '', false);
+    texts[i].classList.remove('interim');  // 不清空已打的字，等講出話 onresult 才覆蓋
     setStatus('正在聆聽 ' + LANGS[i].name + '…');
   };
 
