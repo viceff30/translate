@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>三語即時翻譯</title>
+<meta name="theme-color" content="#0e1116">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="三語翻譯">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang TC", "Helvetica Neue", sans-serif;
+    background: #0e1116;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    min-height: 0;
+  }
+  .panel:last-child { border-bottom: none; }
+  .panel.zh  { background: #1a1410; }
+  .panel.en  { background: #101822; }
+  .panel.id  { background: #101a14; }
+
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .label { font-size: 15px; font-weight: 600; opacity: 0.85; letter-spacing: 0.5px; }
+  .flag { font-size: 20px; margin-right: 6px; }
+
+  .text {
+    flex: 1;
+    font-size: 22px;
+    line-height: 1.45;
+    overflow-y: auto;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+  }
+  .text .placeholder { opacity: 0.3; font-size: 16px; }
+  .text.interim { opacity: 0.55; }
+
+  .btn {
+    margin-top: 10px;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    border-radius: 999px;
+    padding: 11px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s;
+    user-select: none;
+  }
+  .btn:active { transform: scale(0.96); }
+  .zh .btn { background: #c8842a; }
+  .en .btn { background: #2a6dc8; }
+  .id .btn { background: #2aa35a; }
+  .btn.rec { background: #e23b3b !important; animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+
+  #status {
+    text-align: center;
+    font-size: 12px;
+    padding: 6px;
+    opacity: 0.5;
+    background: #000;
+  }
+  #status.err { color: #ff6b6b; opacity: 1; }
+</style>
+</head>
+<body>
+
+  <div class="panel zh" data-i="0">
+    <div class="head"><span class="label"><span class="flag">🇹🇼</span>繁體中文</span></div>
+    <div class="text"><span class="placeholder">點下方按鈕說中文…</span></div>
+    <button class="btn"><span class="dot"></span>說中文</button>
+  </div>
+
+  <div class="panel en" data-i="1">
+    <div class="head"><span class="label"><span class="flag">🇬🇧</span>English</span></div>
+    <div class="text"><span class="placeholder">Tap below to speak English…</span></div>
+    <button class="btn"><span class="dot"></span>Speak English</button>
+  </div>
+
+  <div class="panel id" data-i="2">
+    <div class="head"><span class="label"><span class="flag">🇮🇩</span>Bahasa Indonesia</span></div>
+    <div class="text"><span class="placeholder">Ketuk untuk bicara…</span></div>
+    <button class="btn"><span class="dot"></span>Bahasa Indonesia</button>
+  </div>
+
+  <div id="status">準備就緒 · 點任一按鈕開始</div>
+
+<script>
+const LANGS = [
+  { speech: 'zh-TW', mm: 'zh-TW', name: '中文' },
+  { speech: 'en-US', mm: 'en',    name: 'English' },
+  { speech: 'id-ID', mm: 'id',    name: 'Indonesia' },
+];
+
+const panels = [...document.querySelectorAll('.panel')];
+const texts  = panels.map(p => p.querySelector('.text'));
+const btns   = panels.map(p => p.querySelector('.btn'));
+const statusEl = document.getElementById('status');
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+let activeIndex = -1;
+
+if (!SR) {
+  setStatus('此瀏覽器不支援語音辨識，請用 Chrome（Android）或 Safari（iPhone）開啟', true);
+  btns.forEach(b => b.disabled = true);
+}
+
+function setStatus(msg, isErr) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle('err', !!isErr);
+}
+
+function setText(i, str, interim) {
+  texts[i].classList.toggle('interim', !!interim);
+  texts[i].innerHTML = str ? escapeHtml(str) : '<span class="placeholder">…</span>';
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+btns.forEach((btn, i) => {
+  btn.addEventListener('click', () => {
+    if (activeIndex === i) { recog && recog.stop(); return; }   // 點同一個 = 停止
+    if (recog) recog.stop();                                     // 切換到別的，先停舊的
+    start(i);
+  });
+});
+
+function start(i) {
+  recog = new SR();
+  recog.lang = LANGS[i].speech;
+  recog.continuous = false;       // iOS Safari 只吃單句模式
+  recog.interimResults = true;
+  let finalText = '';
+
+  recog.onstart = () => {
+    activeIndex = i;
+    btns[i].classList.add('rec');
+    btns[i].lastChild.textContent = '錄音中 · 點擊停止';
+    setText(i, '', false);
+    setStatus('正在聆聽 ' + LANGS[i].name + '…');
+  };
+
+  recog.onresult = (e) => {
+    let interim = '';
+    for (let k = e.resultIndex; k < e.results.length; k++) {
+      const t = e.results[k][0].transcript;
+      if (e.results[k].isFinal) finalText += t; else interim += t;
+    }
+    setText(i, finalText + interim, !!interim && !finalText);
+  };
+
+  recog.onerror = (e) => {
+    setStatus('辨識錯誤：' + e.error + (e.error === 'not-allowed' ? '（請允許麥克風權限）' : ''), true);
+  };
+
+  recog.onend = () => {
+    btns[i].classList.remove('rec');
+    btns[i].lastChild.textContent = btnLabel(i);
+    activeIndex = -1;
+    const said = finalText.trim();
+    if (said) {
+      setText(i, said, false);
+      translateAll(said, i);
+    }
+  };
+
+  try { recog.start(); }
+  catch (err) { setStatus('無法啟動：' + err.message, true); }
+}
+
+function btnLabel(i) { return ['說中文', 'Speak English', 'Bahasa Indonesia'][i]; }
+
+async function translateAll(text, srcIndex) {
+  setStatus('翻譯中…');
+  const targets = [0, 1, 2].filter(x => x !== srcIndex);
+  for (const t of targets) setText(t, '翻譯中…', true);
+  try {
+    await Promise.all(targets.map(async (t) => {
+      const out = await translate(text, LANGS[srcIndex].mm, LANGS[t].mm);
+      setText(t, out, false);
+    }));
+    setStatus('完成 · 點任一按鈕繼續');
+  } catch (err) {
+    setStatus('翻譯失敗（可能網路問題或免費額度用盡），稍後再試', true);
+  }
+}
+
+async function translate(text, from, to) {
+  const url = 'https://api.mymemory.translated.net/get?q=' +
+              encodeURIComponent(text) + '&langpair=' + from + '|' + to;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.responseData || !data.responseData.translatedText) throw new Error('no result');
+  return data.responseData.translatedText;
+}
+</script>
+</body>
+</html>
